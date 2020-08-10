@@ -1,0 +1,566 @@
+ORMAT: 1A
+
+HOST: http://<Your_Dialer_Server_IP>:8000
+
+# Platforma Power Dialer API Documentation
+The Platforma Dialer API is based on REST principles, and is very easy to interact with. The API provides you with everything you need to be able to setup and run sucessful campaigns using Platforma's dialer solutions.
+
+##Allowed HTTPs requests:
+
+- `POST` - To create a resource
+- `PUT` - To update resource
+- `GET` - Get a resource or list of resources
+- `DELETE` - To delete resource
+
+##Description Of Usual Server Responses
+
+- 200 `OK` - the request was successful (some API calls may return 201 instead).
+- 201 `Created` - the request was successful and a resource was created.
+- 204 `No Content` - the request was successful but there is no representation to return (i.e. the response is empty).
+- 400 `Bad Request` - the request could not be understood or was missing required parameters.
+- 401 `Unauthorized` - authentication failed or user doesn't have permissions for requesteddded  operation.
+- 403 `Forbidden` - access denied.
+- 404 `Not Found` - resource was not found.
+- 405 `Method Not Allowed` - requested method is not supported for resource.
+- 409 `Conflict` - request conflicts with the current state of the resource, either the requested state is not allowed or the resource is already in the desired state.
+- 500 `Internal Server Error` - something went wrong on our side. Please let us know ASAP so we can fix it.
+- 503 `Service Unavailable` - service is temporary unavailable (e.g. scheduled Platform Maintenance). Try again later.
+
+## Campaign [/campaigns/{campaign%5Fref}]
+A single Campaign object. The Campaign resource is central to the Platforma Dialer, and represents all the information associated with a specific dial campaign.
+
+A Campaign resource has the following attributes:
+
+- name (string)
+- campaign_ref (string) ->No spaces
+- status (string) -> {started | *stopped*}
+- settings (resource) with Dialers default values
+    - **outbound_call_id:** "27123456789" number shown to callee ( **WARNING:** Providers may not accept numbers starting with **0**, always prefer full numbers starting with the country code e.g. 2782... or 4483...)
+    - **dial_aggression:** 3 the number of calls to make per available agent (max 5, if 1 its purely progessive)
+    - **max_attempts:** 30 the maximum number of retries per number (for all of the numbers for a callee)  
+    - **retry_timeout:** 1800 wait half an hour between calls
+    - **notif_type:** "redis" should always be specified as redis
+    - **campaign_type:** "progressive" is the only supported type currently
+    - **moh:** {"moh" | "silence"} music on hold filename (additional need to be added to your pbx manually)
+    - **agent_moh:** {"moh" | "silence" | *null*} music on hold for agents filename, can be set to null to use silence, which is reccomended. (additional need to be added to your pbx manually)
+    - **amd:** true enable voicemail detection. Default true.
+- callees (resource)
+- agents (resource)
+
+Internally the dialer changes the following attributes:
+- status -> {started | stopping | stopped | completed}
+
+[Note about creating large campaigns](http://docs.teleforge.co.za/x/8YA_/)
+
++ Parameters
+    + campaign%5Fref: campaign001 (string) - Your specified unique reference for the campaign
+
+### Retrieve a Single Campaign [GET]
++ Response 200 (application/json)
+
+    + Attributes
+        + campaign (Campaign)
+            + agents (array)
+                + (Agent)
+                    + `last_call_at`: `2014-05-14T12:13:38Z` (string) - Last time agent was called
+            + callees (array)
+                + (object)
+                    + `contact_ref`: contact1234 (string, required) - No spaces, must be globally unique accross all campaigns
+                    + `primary_number`: 0987651234 (string) - Contact number
+                    + `last_dialed_at`: `2014-05-14T12:13:38Z` (string) - last time callee was dialed
+                    + `status`: completed (string) - Callee Status
+                    + `dial_attempts`: 2 (number) - how many times callee has been dialed
++ Response 404 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Campaign Error: Campaign[campaign%5Fref] does not exist
+            
+
+
+### Modify a Campaign [PUT]
+To update a Campaign send a JSON hash with the updated Campaign details. All attributes values from the previous version of this Campaign are carried over by default if not included in the hash. 
+
+You cannot modify the following attributes:
+- campaign_ref
+- callee_contact_ref
+- agent_extension
+
++ Request (application/json)
+    
+    + Attributes
+        + campaign (Campaign)
+
++ Response 200 (application/json)
+
++ Response 404 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Campaign Error: Campaign[{campaign_ref}] does not exist
+            
++ Response 409 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Campaign Error: Campaign[campaign_ref] already exists
+            - Campaign Error: Illegal transition for Campaign[campaign_ref] from status[available] to staus[completed]
+            
+
+### Delete a Campaign [DELETE]
+This will delete all settings and callees associated with the campaign. This operation is not reversable. If you wish to keep these records, rather put the campaign into a "completed" state.
+
++ Response 200 (application/json)
+
++ Response 404 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Campaign Error: Campaign[campaign_ref] does not exist
+
+## Campaign Collection [/campaigns]
+Collection of all the campaigns.
+
+### List All Campaigns [GET]
+
++ Response 200 (application/json)
+    + Attributes
+        + campaigns (array[Campaign Preview])
+
+### Create a Campaign [POST]
+To create a new Campaign simply provide a JSON hash of the details of the campaign, and its settings. You can add callee and agent details too, or you can add them at a later stage via their respective API calls or via the Campaign Resource Update API.
+
++ Request (application/json)
+
+    + Attributes (Campaign)
+
++ Response 201 (application/json)
+
+
++ Response 400 (application/json)
+
+    + Attributes
+        + errors (array[string])
+            - Campaign Error: Missing field[field_name]
+            - Incorrect value[value] for field[field_name] 
+
++ Response 409 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Campaign Error: Campaign[campaign_ref] already exists
+            - Callee Error: Duplicate Contact Ref[contact_ref]
+
+## Callee [/callees/{contact%5Fref}]
+A single Callee object. The Callee resource stores all the information about a single callee, for a single campaign, and is also embedded in the Campaign Resource.
+
+**Warning:** 
+- Callees have to be **unique** and cannot be moved between campaigns like agents can.  
+- If a callee exists in multiple campaigns then they need a custom _contact\_ref_ for each campaign
+
+A Callee resource has the following attributes:
+
+- contact_ref (string) -> No spaces, must be globally unique accross all campaigns
+- campaign_ref (string) -> Identifies the campaign that this callee belongs too
+- status (string) -> {pending | complete} 
+- numbers (set)
+  - n (string) -> contact number
+  - p (integer) -> {1..5 | -1} priority. 1=Highest..5=Lowest | -1=remove the number if it exists
+
+Internally the dialer adds and edits the following attributes:
+- status (string) -> {pending | complete | dialing | failed} 
+- dial_attempts (int)
+- last_dialed_at (DateTime ISO-8601) 
+- calls (resource) {CDR resource}
+
++ Parameters
+    + contact%5Fref: account_1234 (string) - Unique reference for the callee/matter
+
+### Retrieve a Single Callee [GET]
+
++ Response 200 (application/json)
+
+    + Attributes
+        + callee (Full Callee)
+            
++ Response 404 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Callee Error: Contact Ref[contact_ref] does not exist
+
+
+### Modify a Callee [PUT]
+To update a single Callee send a JSON hash with the updated Callee details. All attributes values from the previous version of this Callee are carried over by default if not included in the hash. 
+
+You cannot modify the following attributes:
+- campaign_ref
+- contact_ref
+- last_dialed_at
+- dial_attempts
+- call resources
+- status
+
++ Request (application/json)
+    
+    + Attributes
+        + callee (Callee)
+
++ Response 200 (application/json)
+
++ Response 400 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Callee Error: Invalid number[n] for Contact Ref[contact_ref]
+            - Callee Error: Invalid priority[p] number[n] for Contact Ref[contact_ref]
+            - Callee Error: Missing field[field_name] for Contact Ref[contact_ref]
+
++ Response 404 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Callee Error: Contact Ref[contact_ref] does not exist
+
+### Delete a Callee [DELETE]
+This will delete the callee data as well as all the callees associated CDR resources.
+
++ Response 200 (application/json)
+
+    + Attributes
+        + errors (array[string])
+
++ Response 404 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Callee Error: Contact Ref[contact_ref] does not exist
+
+## Callee Collection [/callees]
+
+**Warning:** 
+- Callees have to be **unique** and cannot be moved between campaigns like agents can.  
+- If a callee exists in multiple campaigns then they need a custom _contact\_ref_ for each campaign
+
+### Create a Callee [POST]
+To create a new Callee simply provide a JSON hash of the details of the callee, as well as the campaign reference so the callee can be linked to the correct cmapaign. 
+
++ Request (application/json)
+    
+    + Attributes
+        + callee (Callee)
+
++ Response 201 (application/json)
+
+    + Attributes
+        + errors (array[string])
+        
++ Response 400 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Callee Error: Invalid number[n] for Contact Ref[contact_ref]
+            - Callee Error: Invalid priority[p] number[n] for Contact Ref[contact_ref]
+            - Callee Error: Missing field[field_name] for Contact Ref[contact_ref]
+
++ Response 404 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Campaign Error: Campaign[campaign_ref] does not exist
+
++ Response 409 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Callee Error: Duplicate Contact Ref[contact_ref]
+
+## Agent [/agents/{extension}/{campaign%5Fref}]
+A single Agent object. The Agent resource stores all the information about a single agent, and is also embedded in the Campaign Resource. A single agent can belong to multiple campaigns on condition that only one of these campaigns is in the "started" state at any given time.
+
+An Agent resource has the following attributes:
+- extension (string) 
+- status (string) -> {offline | available }
+- campaign_ref (string) -> The campaign must be created before hand
+
+The wrappedup status is used to move the agent from wrapup bak into the active call queue. This is to give agents the ability to complete some work after every call. Alternatively you can use 'available' in place of 'wrappedup' however that could lead to ambiguity in what is being done.
+
+Internally the dialer adds and edits the following attributes:
+- status (string) -> {offline | available | busy | wrappedup}
+- last_call_at (DateTime) 
+- calls (resource) {CDR resource}
+
++ Parameters
+    + extension: 1000 (string) - The agents PBX extension number
+    + campaign%5Fref: campaign001 (optional, string) - The campaign identifier, only meaningful for GET and DELETE
+
+### Retrieve a Single Agent [GET]
+If a campaign_ref is specified, then only call information relating to that campaign will be returned.
+    
++ Response 200 (application/json)
+    
+    + Attributes
+        + agent (Full Agent)
+
+### Modify an Agent [PUT]
+To update a single Agent send a JSON hash with the updated Agent details. All attributes values from the previous version of this Agent are carried over by default if not included in the hash. 
+
+By adding a campaign_ref to the Agent hash, you will be adding the agent to that campaign. This method is normally used to update the agent from *offline* to *available* when the agent needs to log back into the active campaign. (If one exists)
+
++ Request (application/json)
+    
+    + Attributes
+        + agent (Agent)
+            + campaign_ref (string)
+
++ Response 200 (application/json)
+    + Attributes
+        + errors (array[string])
+        
++ Response 400 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Agent Error: Requested invalid status[requested_status] for Agent[extension]
+            
++ Response 404 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Campaign Error: Campaign[campaign_ref] does not exist
+            - Agent Error: Agent[extension] is not in Campaign[campaign_ref]
+            
++ Response 409 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Agent Error: Illegal transition for Agent[extension] from current_status to requested_status
+
+### Delete a Agent [DELETE]
+This will delete an Agent from all the campaigns they belong too along with all the CDR records associated with this agent. 
+
+If a *campaign_ref* is specified it will remove the agent from that campaign, while preserving the CDR records.
+
++ Response 200 (application/json)
+    + Attributes
+        + errors (array[string])
+        
++ Response 404 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Campaign Error: Campaign[campaign_ref] does not exist
+            - Agent Error: Agent[extension] is not in Campaign[campaign_ref]
+
+## Agent Collection [/agents]
+
+### Create an Agent [POST]
+To create a new Agent, or add an existing Agent to a new campaign simply provide a JSON hash of the details of the Agent, as well as the campaign reference of the campaign you want the Agent added to. 
+
+If you are just adding the agent to a new campaign, and are unsure about their status in existing campaigns then don't specify a *status*
+
++ Request (application/json)
+    + Attributes
+        + agent (Agent)
+            + campaign_ref: campaign001 (string)
+
++ Response 201 (application/json)
+
+    + Attributes
+        + errors (array[string])
+        
++ Response 400 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Agent Error: Requested invalid status[requested_status] for Agent[extension]
+
++ Response 404 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Campaign Error: Campaign[campaign_ref] does not exist
+
++ Response 409 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Agent Error: Agent[extension] already in Campaign[campaign_ref]
+
+## Calls [/calls/{call%5Fid}]
+
+A call needs to be dispositioned so that the number can be handled correctly 
+
+An call resource has the following attributes:
+- call_id (string) -> _(call\_ref in the Notifications API)_ The unique call_id sent to the agent via your chose dialer notification (callack) mechanism
+- disposition (string) -> {'E' | 'H' | 'C' | 'R'}
+
+**Disposition Codes:**
+- 'E' -> Hangup the call with the disposition of who hungup {agent\_hangup | callee\_hangup}
+- 'H' -> Hangup the call and remove the number from the callee
+- 'C' -> Hangup the call and mark the matter as completed (Will not be called further)
+- 'R' -> Hangup the current call and retry the matter later.
+
+**Disposition Defaults:**
+- A successfully contacted callee is auto dispositioned to:
+    - 'C' if the callee spoke to an agent
+    - 'E' if the callee hungup whilst on hold (did not speak to an agent) as **callee\_hangup**
+- An unsuccessful attempt to contact a callee is auto dispositioned to:
+    - 'E' if dial\_attempts > max\_attempts OR if max_attempts = 0 
+        - **callee status:** failed
+    - 'R' if dial\_attempts < max\_attempts
+        - **callee status:** pending
+
++ Parameters
+    + call%5Fid: 1234 (string) - The unique call\_id sent to the agent via your chose dialer notification callack mechanism
+
+### Disposition a Call [PUT]
+
+These methods allow you to handle calls which an agent has received, or is currently busy with. You can hangup and disposition (set the end reason) of the call via this interface.
+
+Although these codes all hangup the call this API method multiple times per unique call. 
+For instance, if we want to hangup the current call an agent is busy with and then allow the agent to do some work before decising if they want to retry or close the matter you can call:
+
+- First hangup the call using 'E'
+- Let the agent work in wrapup mode (Will not get more calls)
+- Next call using 'R' to state that we want to retry the number
+    
++ Request (application/json)
+    + Attributes
+        + call
+            + disposition (Disposition)
+
++ Response 200 (application/json)
+    + Attributes
+        + errors (array[string])
+        
++ Response 400 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Call Error: Invalid Disposition[disposition]
+        
++ Response 404 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Call Error: Call ID[call_id] does not exist
+
+## Call Recordings [/calls/recording/{call%5Fid}]
+
++ Parameters
+    + call%5Fid: 1234 (string) - The unique call\_id sent to the agent via your chose dialer notification callack mechanism
+
+### Get Recording [GET]
+Triggers a recording file download for the call
+    
++ Response 200
+        
++ Response 404 (application/json)
+    
+    + Attributes
+        + errors (array[string])
+            - Call Error: Call ID[call_id] does not exist
+            - Call Error: Recording not found
+
+## Dialer Core State [/core]
+In **Emergency** situations the dialer service can be controlled manually, this should never be needed.
+It may fall away at any time, but was implemented to speed up recovery time if a dialer becomes unresponsive due to a race condition.
+
+The dialer should always be running under normal operation. It should never go down other then for updates.
+
+If any of these are used please contact us immediately.
+
+### Start [GET /core/start]
+Will start the dialer service
+
++ Response 200
+
+### Stop [GET /core/stop]
+Stopping the dialer causes it to lose some internal state, please delete any campaigns that were running and resend them to the dialer
+
++ Response 200
+
+### Restart [GET /core/restart]
+The dialer will be stopped and then started (internal state will be lost just as if it were stopped)
+
++ Response 200
+
+# Data Structures
+
+## Disposition (enum)
++ E (string) - Hangup the call with the disposition of who hungup {agent_hangup | callee_hangup}
++ H (string) - Hangup the call and remove the number from the callee
++ C (string) - Hangup the call and mark the matter as completed (Will not be called further)
++ R (string) - Hangup the current call and retry the matter later.
+
+## Call (object)
++ `call_id`: 845(number)
++ `number_dialed`: 0987651234(string)
++ `recording_location`: /dev/recordings/ENIG00034~9822~campaign_001~3drt21626fs.wav
++ `disposition`: closed(string)
++ `dialed_at`: `2014-05-14T12:13:38Z` (string)
++ `hold_time`: 2(number)
++ `call_time`: 79(number)
+
+## Callee Call (Call)
++ `agent`: 2001(string)
+
+
+## Callee (object)
++ `contact_ref`: contact1234 (string, required) - No spaces, must be globally unique accross all campaigns
++ numbers (array, required)
+    + (object)
+        + `n`: 0987651234 (string, required) - Contact number
+        + `p`: 1 (number, required) - priority within the numbers list. 1=Highest..5=Lowest | -1=remove the number if it exists
+
+## Full Callee (Callee)
++ `campaign_ref`: campaign001 (string) - Identifies the campaign that this callee belongs too
++ `status`: pending (string) - Callee Status
++ `last_dialed_at`: `2014-05-14T12:13:38Z` (string) - last time callee was dialed
++ `dial_attempts`: 2 (number) - how many times callee has been dialed
++ calls (array)
+    + (Callee Call)
+
+## Agent Status (enum)
++ available (string) - Agent is available
++ offline (string) - Agent is offline
+
+## Agent (object)
++ `extension`: 4004 (string) - Extension of the agent
++ `status`: available (Agent Status, default) - Status of the agent
+
+## Full Agent (Agent)
++ `last_call_at`: `2014-05-14T12:13:38Z` (string) - last time agent was called
++ calls (array)
+    + (Call)
+        + `contact_ref`: ENIG00034~9822~campaign_001 (string)
+        + `campaign_ref`: campaign_001 (string)
+
+## Campaign Settings (object)
++ `outbound_call_id`: 27123456789 (string) - number shown to callee ( **WARNING:** Providers may not accept numbers starting with **0**, always prefer full numbers starting with the country code e.g. 2782... or 4483...)
++ `dial_aggression`: 3 (number) - the number of calls to make per available agent (max 5, if 1 its purely progessive)
++ `max_attempts`: 30 (number) - the maximum number of retries per number (for all of the numbers for a callee)  
++ `retry_timeout`: 1800 (number) - wait half an hour between calls
++ `notif_type`: redis (string) - should always be specified as redis
++ `campaign_type`: progressive (string) - is the only supported type currently
++ `moh`: moh (string) - music on hold filename (additional need to be added to your pbx manually)
++ `agent_moh`: moh (string) - music on hold for agents filename, can be set to null to use silence, which is reccomended. (additional need to be added to your pbx manually)
++ `amd`: true (boolean) - enable voicemail detection. Default true.
+
+## Campaign Status (enum)
+
++ started (string) - the campaign has started and is dialing
++ stopped (string) - the campaign is stopped, no calls are being made
++ completed (string) - the campaign has completed
+
+## Campaign Preview (object)
+
++ name : Our first campaign (string)
++ campaign_ref : campaign001 (string)
++ status : stopped (Campaign Status, default)
+
+## Campaign (Campaign Preview)
++ settings (Campaign Settings, required)
++ callees (array[Callee])
++ agents (array[Agent])

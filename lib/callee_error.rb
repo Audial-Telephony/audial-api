@@ -1,0 +1,2 @@
+class CalleeError < StandardError
+end

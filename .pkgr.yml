@@ -1,0 +1,16 @@
+name: dialer-api
+after_install: "packaging/postinstall.sh"
+targets:
+  centos-7:
+  
+dependencies:
+    # manually adding back needed deps from buildpack
+    - which
+    - openssl
+    - openssl-libs
+    - mysql-libs
+
+notifications:
+  recipients:
+    - packager@robot.zapier.com
+    

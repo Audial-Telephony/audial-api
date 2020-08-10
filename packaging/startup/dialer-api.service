@@ -1,0 +1,10 @@
+[Unit]
+Description=Job that runs the dialer-api web service
+
+[Service]
+Type=simple
+Environment=PORT=6000
+ExecStart=/usr/bin/dialer-api run web
+
+[Install]
+WantedBy=multi-user.target
